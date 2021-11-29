@@ -498,6 +498,14 @@
   }
 
 
+  FT_COMPARE_DEF( int )
+  compare_ppem( const void*  a,
+                const void*  b )
+  {
+    return *(FT_Byte*)a - *(FT_Byte*)b;
+  }
+
+
   /**************************************************************************
    *
    * @Function:
@@ -577,8 +585,10 @@
     if ( FT_QNEW_ARRAY( face->hdmx_record_sizes, num_records ) )
       goto Fail;
 
-    /* XXX: We do not check if the records are sorted by ppem */
-    /* and cannot use binary search later.                    */
+    /* The records must be already sorted by ppem but it does not */
+    /* hurt to make sure so that the binary search works later.   */
+    ft_qsort( p, num_records, record_size, compare_ppem );
+
     for ( nn = 0; nn < num_records; nn++ )
     {
       if ( p + record_size > limit )
@@ -619,27 +629,36 @@
   /**************************************************************************
    *
    * Return the advance width table for a given pixel size if it is found
-   * in the font's `hdmx' table (if any).
+   * in the font's `hdmx' table (if any).  The records must be sorted for
+   * the binary search to work properly.
    */
   FT_LOCAL_DEF( FT_Byte* )
   tt_face_get_device_metrics( TT_Face  face,
                               FT_UInt  ppem,
                               FT_UInt  gindex )
   {
-    FT_UInt   nn;
+    FT_UInt   min         = 0;
+    FT_UInt   max         = face->hdmx_record_count - 1;
+    FT_UInt   mid;
     FT_Byte*  result      = NULL;
     FT_ULong  record_size = face->hdmx_record_size;
     FT_Byte*  record      = FT_OFFSET( face->hdmx_table, 8 );
 
 
-    for ( nn = 0; nn < face->hdmx_record_count; nn++ )
-      if ( face->hdmx_record_sizes[nn] == ppem )
+    do
+    {
+      mid = ( min + max ) >> 1;
+
+      if ( face->hdmx_record_sizes[mid] > ppem )
+        max = mid - 1;
+      else if ( face->hdmx_record_sizes[mid] < ppem )
+        min = mid + 1;
+      else
       {
-        gindex += 2;
-        if ( gindex < record_size )
-          result = record + nn * record_size + gindex;
+        result = record + mid * record_size + gindex + 2;
         break;
       }
+    } while ( max >= min );
 
     return result;
   }
